@@ -1,0 +1,4 @@
+numexpr==2.7.3
+numpy==1.20.3
+sympy==1.9
+torch==1.10.0

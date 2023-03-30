@@ -127,4 +127,5 @@ dmypy.json
 # /tools
 /data
 /dumped
+/dumped-old
 .vscode

@@ -69,8 +69,8 @@ class Adam(optim.Optimizer):
                 #     grad.add_(group['weight_decay'], p.data)
 
                 # Decay the first and second moment running average coefficient
-                exp_avg.mul_(beta1).add_(1 - beta1, grad)
-                exp_avg_sq.mul_(beta2).addcmul_(1 - beta2, grad, grad)
+                exp_avg.mul_(beta1).add_(grad, alpha=1 - beta1)
+                exp_avg_sq.mul_(beta2).addcmul_(grad, grad, value=1 - beta2)
                 denom = exp_avg_sq.sqrt().add_(group['eps'])
                 # denom = exp_avg_sq.sqrt().clamp_(min=group['eps'])
 
@@ -81,7 +81,7 @@ class Adam(optim.Optimizer):
                 if group['weight_decay'] != 0:
                     p.data.add_(-group['weight_decay'] * group['lr'], p.data)
 
-                p.data.addcdiv_(-step_size, exp_avg, denom)
+                p.data.addcdiv_(exp_avg, denom, value=-step_size)
 
         return loss
 

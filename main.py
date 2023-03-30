@@ -163,12 +163,13 @@ def main(params):
         assert torch.cuda.is_available()
     src.utils.CUDA = not params.cpu
 
+    print('>>>>>>>>>>>>>>', params.tasks)
     # build environment / modules / trainer / evaluator
-    env = build_env(params)
+    env = build_env(params, p1=1, p2=1)
     modules = build_modules(env, params)
     trainer = Trainer(modules, env, params)
     evaluator = Evaluator(trainer)
-
+    print('>>>>>>>>>>>>>>', params.tasks)
     # evaluation
     if params.eval_only:
         scores = evaluator.run_all_evals()
@@ -178,10 +179,19 @@ def main(params):
         exit()
 
     # training
-    for _ in range(params.max_epoch):
+    for i in range(params.max_epoch):
+
+        p1 = random.randint(20, 100)
+        p2 = random.randint(20, 80)
+
+        p1 = int(p1 * 2)
 
         logger.info("============ Starting epoch %i ... ============" % trainer.epoch)
 
+        env = build_env(params, p1=p1, p2=p2, list_tasks=False)
+        modules = build_modules(env, params)
+        trainer = Trainer(modules, env, params)
+        evaluator = Evaluator(trainer)
         trainer.n_equations = 0
 
         while trainer.n_equations < trainer.epoch_size:

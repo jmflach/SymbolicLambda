@@ -411,13 +411,18 @@ class Trainer(object):
         """
         Export data to the disk.
         """
+        #print('export data')
         env = self.env
         (x1, len1), (x2, len2), _ = self.get_batch(task)
+        #print(x1)
+        #print(x2)
         for i in range(len(len1)):
             # prefix
             prefix1 = [env.id2word[wid] for wid in x1[1:len1[i] - 1, i].tolist()]
             prefix2 = [env.id2word[wid] for wid in x2[1:len2[i] - 1, i].tolist()]
             # infix
+            #print("export_data x >>", ' '.join(prefix1))
+            #print("export_data y >>", ' '.join(prefix2))
             infix1 = env.prefix_to_infix(env.unclean_prefix(prefix1))[1:-1]
             infix2 = env.prefix_to_infix(env.unclean_prefix(prefix2))[1:-1]
             # save

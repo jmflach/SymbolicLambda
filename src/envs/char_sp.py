@@ -23,19 +23,26 @@ from sympy.parsing.sympy_parser import parse_expr
 from sympy.core.cache import clear_cache
 from sympy.integrals.risch import NonElementaryIntegral
 from sympy.calculus.util import AccumBounds
-
+import string
 from ..utils import bool_flag
 from ..utils import timeout, TimeoutError
 from .sympy_utils import remove_root_constant_terms, reduce_coefficients, reindex_coefficients
 from .sympy_utils import extract_non_constant_subtree, simplify_const_with_coeff, simplify_equa_diff, clean_degree2_solution
 from .sympy_utils import remove_mul_const, has_inf_nan, has_I, simplify
 
+#sys.path.append('../lambda-calculus/src')
+sys.path.append('../lambda-calculus/src')
+
+import lambda_utils as lambda_calculus
+
+
 
 CLEAR_SYMPY_CACHE_FREQ = 10000
 
 
-SPECIAL_WORDS = ['<s>', '</s>', '<pad>', '(', ')']
-SPECIAL_WORDS = SPECIAL_WORDS + [f'<SPECIAL_{i}>' for i in range(len(SPECIAL_WORDS), 10)]
+# SPECIAL_WORDS = ['<s>', '</s>', '<pad>', '(', ')']
+SPECIAL_WORDS = ['<s>', '</s>', '<pad>', ' ']
+# SPECIAL_WORDS = SPECIAL_WORDS + [f'<SPECIAL_{i}>' for i in range(len(SPECIAL_WORDS), 10)]
 
 
 INTEGRAL_FUNC = {sp.erf, sp.erfc, sp.erfi, sp.erfinv, sp.erfcinv, sp.expint, sp.Ei, sp.li, sp.Li, sp.Si, sp.Ci, sp.Shi, sp.Chi, sp.fresnelc, sp.fresnels}
@@ -48,6 +55,14 @@ TEST_ZERO_VALUES = [0.1, 0.9, 1.1, 1.9]
 TEST_ZERO_VALUES = [-x for x in TEST_ZERO_VALUES] + TEST_ZERO_VALUES
 ZERO_THRESHOLD = 1e-13
 
+# LAMBDA_VARS = string.ascii_lowercase + string.ascii_uppercase
+LAMBDA_VARS = string.ascii_lowercase
+LAMBDA_VARS = LAMBDA_VARS.replace('l', '')
+LAMBDA_VARS = [char for char in LAMBDA_VARS]
+
+DB_VARS = list(map(str, list(range(0, 56))))
+
+# LAMBDA_VARS = ['a', 'b', 'c', 'd', 'e', 'a_1', 'b_1', 'c_1', 'd_1', 'e_1']
 
 logger = getLogger()
 
@@ -134,106 +149,129 @@ def eval_test_zero(eq):
 
 class CharSPEnvironment(object):
 
-    TRAINING_TASKS = {'prim_fwd', 'prim_bwd', 'prim_ibp', 'ode1', 'ode2'}
+    TRAINING_TASKS = {'prim_fwd', 'prim_bwd', 'prim_ibp', 'ode1', 'ode2', 'lambda', 'debruijn'}
 
     # https://docs.sympy.org/latest/modules/functions/elementary.html#real-root
 
     SYMPY_OPERATORS = {
         # Elementary functions
-        sp.Add: 'add',
-        sp.Mul: 'mul',
-        sp.Pow: 'pow',
-        sp.exp: 'exp',
-        sp.log: 'ln',
-        sp.Abs: 'abs',
-        sp.sign: 'sign',
-        # Trigonometric Functions
-        sp.sin: 'sin',
-        sp.cos: 'cos',
-        sp.tan: 'tan',
-        sp.cot: 'cot',
-        sp.sec: 'sec',
-        sp.csc: 'csc',
-        # Trigonometric Inverses
-        sp.asin: 'asin',
-        sp.acos: 'acos',
-        sp.atan: 'atan',
-        sp.acot: 'acot',
-        sp.asec: 'asec',
-        sp.acsc: 'acsc',
-        # Hyperbolic Functions
-        sp.sinh: 'sinh',
-        sp.cosh: 'cosh',
-        sp.tanh: 'tanh',
-        sp.coth: 'coth',
-        sp.sech: 'sech',
-        sp.csch: 'csch',
-        # Hyperbolic Inverses
-        sp.asinh: 'asinh',
-        sp.acosh: 'acosh',
-        sp.atanh: 'atanh',
-        sp.acoth: 'acoth',
-        sp.asech: 'asech',
-        sp.acsch: 'acsch',
-        # Derivative
-        sp.Derivative: 'derivative',
+        # sp.Add: 'add',
+        # sp.Mul: 'mul',
+        # sp.Pow: 'pow',
+        # sp.exp: 'exp',
+        # sp.log: 'ln',
+        # sp.Abs: 'abs',
+        # sp.sign: 'sign',
+        # # Trigonometric Functions
+        # sp.sin: 'sin',
+        # sp.cos: 'cos',
+        # sp.tan: 'tan',
+        # sp.cot: 'cot',
+        # sp.sec: 'sec',
+        # sp.csc: 'csc',
+        # # Trigonometric Inverses
+        # sp.asin: 'asin',
+        # sp.acos: 'acos',
+        # sp.atan: 'atan',
+        # sp.acot: 'acot',
+        # sp.asec: 'asec',
+        # sp.acsc: 'acsc',
+        # # Hyperbolic Functions
+        # sp.sinh: 'sinh',
+        # sp.cosh: 'cosh',
+        # sp.tanh: 'tanh',
+        # sp.coth: 'coth',
+        # sp.sech: 'sech',
+        # sp.csch: 'csch',
+        # # Hyperbolic Inverses
+        # sp.asinh: 'asinh',
+        # sp.acosh: 'acosh',
+        # sp.atanh: 'atanh',
+        # sp.acoth: 'acoth',
+        # sp.asech: 'asech',
+        # sp.acsch: 'acsch',
+        # # Derivative
+        # sp.Derivative: 'derivative',
     }
 
     OPERATORS = {
         # Elementary functions
-        'add': 2,
-        'sub': 2,
-        'mul': 2,
-        'div': 2,
-        'pow': 2,
-        'rac': 2,
-        'inv': 1,
-        'pow2': 1,
-        'pow3': 1,
-        'pow4': 1,
-        'pow5': 1,
-        'sqrt': 1,
-        'exp': 1,
-        'ln': 1,
-        'abs': 1,
-        'sign': 1,
-        # Trigonometric Functions
-        'sin': 1,
-        'cos': 1,
-        'tan': 1,
-        'cot': 1,
-        'sec': 1,
-        'csc': 1,
-        # Trigonometric Inverses
-        'asin': 1,
-        'acos': 1,
-        'atan': 1,
-        'acot': 1,
-        'asec': 1,
-        'acsc': 1,
-        # Hyperbolic Functions
-        'sinh': 1,
-        'cosh': 1,
-        'tanh': 1,
-        'coth': 1,
-        'sech': 1,
-        'csch': 1,
-        # Hyperbolic Inverses
-        'asinh': 1,
-        'acosh': 1,
-        'atanh': 1,
-        'acoth': 1,
-        'asech': 1,
-        'acsch': 1,
+        # 'add': 2,
+        # 'sub': 2,
+        # 'mul': 2,
+        # 'div': 2,
+        # 'pow': 2,
+        # 'rac': 2,
+        # 'inv': 1,
+        # 'pow2': 1,
+        # 'pow3': 1,
+        # 'pow4': 1,
+        # 'pow5': 1,
+        # 'sqrt': 1,
+        # 'exp': 1,
+        # 'ln': 1,
+        # 'abs': 1,
+        # 'sign': 1,
+        # # Trigonometric Functions
+        # 'sin': 1,
+        # 'cos': 1,
+        # 'tan': 1,
+        # 'cot': 1,
+        # 'sec': 1,
+        # 'csc': 1,
+        # # Trigonometric Inverses
+        # 'asin': 1,
+        # 'acos': 1,
+        # 'atan': 1,
+        # 'acot': 1,
+        # 'asec': 1,
+        # 'acsc': 1,
+        # # Hyperbolic Functions
+        # 'sinh': 1,
+        # 'cosh': 1,
+        # 'tanh': 1,
+        # 'coth': 1,
+        # 'sech': 1,
+        # 'csch': 1,
+        # # Hyperbolic Inverses
+        # 'asinh': 1,
+        # 'acosh': 1,
+        # 'atanh': 1,
+        # 'acoth': 1,
+        # 'asech': 1,
+        # 'acsch': 1,
+
+        # 'ALA': 1,
+        
         # Derivative
-        'derivative': 2,
+        # 'derivative': 2,
         # custom functions
-        'f': 1,
-        'g': 2,
-        'h': 3,
+        # 'f': 1,
+        # 'g': 2,
+        # 'h': 3,
+        # lambda:
+
+        'BETA': 1,
+        '@': 2,
+        'l': 1,
+        # 'BOOL': 1,
+        # 'and': 2,
+        # 'or': 2,
+        # 'not': 1,
     }
 
-    def __init__(self, params):
+    def create_vars(self, vars):
+        r = OrderedDict({})
+
+        for var in vars:
+            r[var] = sp.Symbol('x', real=True, nonzero=True)  # , positive=True
+            for i in range(10):
+                new_var = var + '_' + str(i+1)
+                r[new_var] = sp.Symbol(new_var, real=True, nonzero=True)  # , positive=True
+
+        return r
+
+    def __init__(self, params, p1=1, p2=1):
 
         self.max_int = params.max_int
         self.max_ops = params.max_ops
@@ -242,7 +280,7 @@ class CharSPEnvironment(object):
         self.balanced = params.balanced
         self.positive = params.positive
         self.precision = params.precision
-        self.n_variables = params.n_variables
+        self.n_variables = params.n_variables * 10 #alterei aqui tbm
         self.n_coefficients = params.n_coefficients
         self.max_len = params.max_len
         self.clean_prefix_expr = params.clean_prefix_expr
@@ -255,6 +293,8 @@ class CharSPEnvironment(object):
         ops = params.operators.split(',')
         ops = sorted([x.split(':') for x in ops])
         assert len(ops) >= 1 and all(o in self.OPERATORS for o, _ in ops)
+        print(f'operators {self.OPERATORS}')
+        print(f'ops       {ops}')
         self.all_ops = [o for o, _ in ops]
         self.una_ops = [o for o, _ in ops if self.OPERATORS[o] == 1]
         self.bin_ops = [o for o, _ in ops if self.OPERATORS[o] == 2]
@@ -272,13 +312,9 @@ class CharSPEnvironment(object):
         assert len(self.all_ops) == len(self.una_ops) + len(self.bin_ops)
 
         # symbols / elements
-        self.constants = ['pi', 'E']
-        self.variables = OrderedDict({
-            'x': sp.Symbol('x', real=True, nonzero=True),  # , positive=True
-            'y': sp.Symbol('y', real=True, nonzero=True),  # , positive=True
-            'z': sp.Symbol('z', real=True, nonzero=True),  # , positive=True
-            't': sp.Symbol('t', real=True, nonzero=True),  # , positive=True
-        })
+        # self.constants = ['pi', 'E']
+        self.constants = []
+        self.variables = self.create_vars(['x', 'y', 'z'])
         self.coefficients = OrderedDict({
             f'a{i}': sp.Symbol(f'a{i}', real=True)
             for i in range(10)
@@ -288,16 +324,17 @@ class CharSPEnvironment(object):
             'g': sp.Function('g', real=True, nonzero=True),
             'h': sp.Function('h', real=True, nonzero=True),
         })
-        self.symbols = ['I', 'INT+', 'INT-', 'INT', 'FLOAT', '-', '.', '10^', 'Y', "Y'", "Y''"]
-        if self.balanced:
-            assert self.int_base > 2
-            max_digit = (self.int_base + 1) // 2
-            self.elements = [str(i) for i in range(max_digit - abs(self.int_base), max_digit)]
-        else:
-            self.elements = [str(i) for i in range(abs(self.int_base))]
+        # self.symbols = ['I', 'INT+', 'INT-', 'INT', 'FLOAT', '-', '.', '10^', 'Y', "Y'", "Y''"]
+        self.symbols = ['INT+']
+        # if self.balanced:
+        #     assert self.int_base > 2
+        #     max_digit = (self.int_base + 1) // 2
+        #     self.elements = [str(i) for i in range(max_digit - abs(self.int_base), max_digit)]
+        # else:
+        #     self.elements = [str(i) for i in range(abs(self.int_base))]
         assert 1 <= self.n_variables <= len(self.variables)
         assert 0 <= self.n_coefficients <= len(self.coefficients)
-        assert all(k in self.OPERATORS for k in self.functions.keys())
+        # assert all(k in self.OPERATORS for k in self.functions.keys())
         assert all(v in self.OPERATORS for v in self.SYMPY_OPERATORS.values())
 
         # SymPy elements
@@ -306,8 +343,20 @@ class CharSPEnvironment(object):
             assert k not in self.local_dict
             self.local_dict[k] = v
 
-        # vocabulary
-        self.words = SPECIAL_WORDS + self.constants + list(self.variables.keys()) + list(self.coefficients.keys()) + self.operators + self.symbols + self.elements
+
+
+        self.lambda_vars = LAMBDA_VARS
+        self.db_vars = DB_VARS
+        print(f'lambda vars: {self.lambda_vars}')
+
+
+        # Change here if you want to train traditional or DB notation
+        self.words = SPECIAL_WORDS +  self.operators + self.lambda_vars + self.symbols
+        # self.words = SPECIAL_WORDS +  self.operators + self.db_vars + self.symbols
+        
+
+        print(f'words: {self.words}')
+
         self.id2word = {i: s for i, s in enumerate(self.words)}
         self.word2id = {s: i for i, s in self.id2word.items()}
         assert len(self.words) == len(set(self.words))
@@ -323,7 +372,9 @@ class CharSPEnvironment(object):
         assert len(s) == 4 and all(x >= 0 for x in s)
         self.leaf_probs = np.array(s).astype(np.float64)
         self.leaf_probs = self.leaf_probs / self.leaf_probs.sum()
-        assert self.leaf_probs[0] > 0
+
+        # assert self.leaf_probs[0] > 0
+
         assert (self.leaf_probs[1] == 0) == (self.n_coefficients == 0)
 
         # possible leaves
@@ -336,8 +387,8 @@ class CharSPEnvironment(object):
 
         # generation parameters
         self.nl = 1  # self.n_leaves
-        self.p1 = 1  # len(self.una_ops)
-        self.p2 = 1  # len(self.bin_ops)
+        self.p1 = p1  # len(self.una_ops)
+        self.p2 = p2  # len(self.bin_ops)
 
         # initialize distribution for binary and unary-binary trees
         self.bin_dist = self.generate_bin_dist(params.max_ops)
@@ -359,7 +410,16 @@ class CharSPEnvironment(object):
         """
         lengths = torch.LongTensor([len(s) + 2 for s in sequences])
         sent = torch.LongTensor(lengths.max().item(), lengths.size(0)).fill_(self.pad_index)
-        assert lengths.min().item() > 2
+        # print('lengths', lengths, lengths.min())
+        # print(sequences)
+        
+        # if lengths.min().item() <= 2:
+        #     print('ERROR')
+        #     print('lengths', lengths, lengths.min())
+        #     print(sequences)
+        
+        # COMMENTED BY JOAO
+        # assert lengths.min().item() > 2
 
         sent[0] = self.eos_index
         for i, s in enumerate(sequences):
@@ -449,13 +509,17 @@ class CharSPEnvironment(object):
             res.append('INT')
         else:
             res.append('INT-' if neg else 'INT+')
+
+        # print(res[0])
         return res[::-1]
+        # return [res[0]]
 
     def parse_int(self, lst):
         """
         Parse a list that starts with an integer.
         Return the integer value, and the position it ends in the list.
         """
+        # greturn lst[0]
         base = self.int_base
         balanced = self.balanced
         val = 0
@@ -485,10 +549,17 @@ class CharSPEnvironment(object):
             probs.append((self.nl ** i) * self.p2 * self.ubi_dist[nb_empty - i + 1][nb_ops - 1])
         probs = [p / self.ubi_dist[nb_empty][nb_ops] for p in probs]
         probs = np.array(probs, dtype=np.float64)
+
         e = rng.choice(2 * nb_empty, p=probs)
+
+        # print(f'escolhendo {2*nb_empty} {probs}')
+        # e = rng.choice(0, 10)
+
         arity = 1 if e < nb_empty else 2
+        # print(f'escolhendo {e} {nb_empty}')
         e = e % nb_empty
         return e, arity
+        # return e, 1
 
     def get_leaf(self, max_int, rng):
         """
@@ -497,7 +568,12 @@ class CharSPEnvironment(object):
         self.leaf_probs
         leaf_type = rng.choice(4, p=self.leaf_probs)
         if leaf_type == 0:
-            return [list(self.variables.keys())[rng.randint(self.n_variables)]]
+            r = [list(self.variables.keys())[rng.randint(self.n_variables)]]
+            while ("_" in r[0]):
+                #print(f'joga fora {r}')
+                r = [list(self.variables.keys())[rng.randint(self.n_variables)]]
+            #print("leafs: ", r)
+            return r
         elif leaf_type == 1:
             return [list(self.coefficients.keys())[rng.randint(self.n_coefficients)]]
         elif leaf_type == 2:
@@ -506,6 +582,85 @@ class CharSPEnvironment(object):
             return self.write_int(c)
         else:
             return [self.constants[rng.randint(len(self.constants))]]
+
+    def _generate_expr_de_bruijn(self, nb_total_ops, max_int, rng, require_x=False, require_y=False, require_z=False):
+        """
+        Create a tree with exactly `nb_total_ops` operators.
+        """
+        stack = [None]
+        nb_empty = 1  # number of empty nodes
+        l_leaves = 0  # left leaves - None states reserved for leaves
+        t_leaves = 1  # total number of leaves (just used for sanity check)
+
+        # create tree
+        for nb_ops in range(nb_total_ops, 0, -1):
+
+            # next operator, arity and position
+            skipped, arity = self.sample_next_pos_ubi(nb_empty, nb_ops, rng)
+
+            if arity == 1:
+                op = rng.choice(self.una_ops, p=self.una_ops_probs)
+            else:
+                op = rng.choice(self.bin_ops, p=self.bin_ops_probs)
+
+            # print(arity, op)
+
+            nb_empty += self.OPERATORS[op] - 1 - skipped  # created empty nodes - skipped future leaves
+            t_leaves += self.OPERATORS[op] - 1            # update number of total leaves
+            l_leaves += skipped                           # update number of left leaves
+
+            # update tree
+            pos = [i for i, v in enumerate(stack) if v is None][l_leaves]
+
+
+            #print(f"op {op} pos {pos} created empty {nb_empty} total leaves {t_leaves} left leaves {l_leaves}  operators {self.OPERATORS[op]}")
+            if (op == 'asdfasl'):
+                stack = stack[:pos] + [op] + ['M'] + [None for _ in range(self.OPERATORS[op]) - 1] + stack[pos + 1:]
+                #nb_empty -= 1  # created empty nodes - skipped future leaves
+                t_leaves -= 1           # update number of total leaves
+                l_leaves -= 1
+            else:
+                stack = stack[:pos] + [op] + [None for _ in range(self.OPERATORS[op])] + stack[pos + 1:]
+            #print ("stack intermediario", stack)
+
+        #aqui sai a arvore sem as folhas
+        #print('antes', stack)
+        # sanity check
+
+        assert len([1 for v in stack if v in self.all_ops]) == nb_total_ops
+        assert len([1 for v in stack if v is None]) == t_leaves
+
+        # create leaves
+        # optionally add variables x, y, z if possible
+        assert not require_z or require_y
+        assert not require_y or require_x
+        leaves = [self.get_leaf(max_int, rng) for _ in range(t_leaves)]
+        #print (leaves)
+        if require_z and t_leaves >= 2:
+            leaves[1] = ['z']
+        if require_y:
+            leaves[0] = ['y']
+        if require_x and not any(len(leaf) == 1 and leaf[0] == 'x' for leaf in leaves):
+            leaves[-1] = ['x']
+        rng.shuffle(leaves)
+
+        #print('meio', stack)
+        #print(leaves)
+
+        # insert leaves into tree
+        for pos in range(len(stack) - 1, -1, -1):
+            if stack[pos] is None:
+                stack = stack[:pos] + leaves.pop() + stack[pos + 1:]
+        assert len(leaves) == 0
+
+        leaves = [self.get_leaf(max_int, rng) for _ in range(100)]
+        rng.shuffle(leaves)
+        # print ("antes ", stack)
+        # for pos in range(len(stack) - 1, -1, -1):
+        #     if stack[pos] == 'l':
+        #         stack = stack[:pos+1] + leaves.pop() + stack[pos + 1:]
+        # print ("depois", stack)
+        return stack
 
     def _generate_expr(self, nb_total_ops, max_int, rng, require_x=False, require_y=False, require_z=False):
         """
@@ -521,10 +676,12 @@ class CharSPEnvironment(object):
 
             # next operator, arity and position
             skipped, arity = self.sample_next_pos_ubi(nb_empty, nb_ops, rng)
+
             if arity == 1:
                 op = rng.choice(self.una_ops, p=self.una_ops_probs)
             else:
                 op = rng.choice(self.bin_ops, p=self.bin_ops_probs)
+
 
             nb_empty += self.OPERATORS[op] - 1 - skipped  # created empty nodes - skipped future leaves
             t_leaves += self.OPERATORS[op] - 1            # update number of total leaves
@@ -532,9 +689,22 @@ class CharSPEnvironment(object):
 
             # update tree
             pos = [i for i, v in enumerate(stack) if v is None][l_leaves]
-            stack = stack[:pos] + [op] + [None for _ in range(self.OPERATORS[op])] + stack[pos + 1:]
 
+
+            #print(f"op {op} pos {pos} created empty {nb_empty} total leaves {t_leaves} left leaves {l_leaves}  operators {self.OPERATORS[op]}")
+            if (op == 'asdfasl'):
+                stack = stack[:pos] + [op] + ['M'] + [None for _ in range(self.OPERATORS[op]) - 1] + stack[pos + 1:]
+                #nb_empty -= 1  # created empty nodes - skipped future leaves
+                t_leaves -= 1           # update number of total leaves
+                l_leaves -= 1
+            else:
+                stack = stack[:pos] + [op] + [None for _ in range(self.OPERATORS[op])] + stack[pos + 1:]
+            #print ("stack intermediario", stack)
+
+        #aqui sai a arvore sem as folhas
+        #print('antes', stack)
         # sanity check
+
         assert len([1 for v in stack if v in self.all_ops]) == nb_total_ops
         assert len([1 for v in stack if v is None]) == t_leaves
 
@@ -543,6 +713,7 @@ class CharSPEnvironment(object):
         assert not require_z or require_y
         assert not require_y or require_x
         leaves = [self.get_leaf(max_int, rng) for _ in range(t_leaves)]
+        #print (leaves)
         if require_z and t_leaves >= 2:
             leaves[1] = ['z']
         if require_y:
@@ -551,12 +722,22 @@ class CharSPEnvironment(object):
             leaves[-1] = ['x']
         rng.shuffle(leaves)
 
+        #print('meio', stack)
+        #print(leaves)
+
         # insert leaves into tree
         for pos in range(len(stack) - 1, -1, -1):
             if stack[pos] is None:
                 stack = stack[:pos] + leaves.pop() + stack[pos + 1:]
         assert len(leaves) == 0
 
+        leaves = [self.get_leaf(max_int, rng) for _ in range(100)]
+        rng.shuffle(leaves)
+        #print ("antes ", stack)
+        for pos in range(len(stack) - 1, -1, -1):
+            if stack[pos] == 'l':
+                stack = stack[:pos+1] + leaves.pop() + stack[pos + 1:]
+        #print ("depois", stack)
         return stack
 
     def write_infix(self, token, args):
@@ -598,11 +779,28 @@ class CharSPEnvironment(object):
             return f'g({args[0]},{args[1]})'
         elif token == 'h':
             return f'h({args[0]},{args[1]},{args[2]})'
+        elif token == '@':
+            return f'({args[0]} {args[1]})'
+        elif token == 'l':
+            # return f'(l {args[0]} . {args[1]}'
+            return f'(l {args[0]}'      ### CHANGE IF DEBRUIN
         elif token.startswith('INT'):
             return f'{token[-1]}{args[0]}'
+        elif token.startswith('BETA'):
+            return f'{args[0]}'
         else:
             return token
         raise InvalidPrefixExpression(f"Unknown token in prefix expression: {token}, with arguments {args}")
+
+    def is_in_variables(self, var):
+        #print(var)
+        if var in self.variables:
+            return True
+        elif len(var) > 1 and var[0] in self.variables and var[1] == '_':
+            #print(">>>>>>>>>>>>>>>>>>>>>>>>>>> ", var)
+            return True
+        else:
+            return False
 
     def _prefix_to_infix(self, expr):
         """
@@ -610,17 +808,25 @@ class CharSPEnvironment(object):
           - infix mode (returns human readable string)
           - develop mode (returns a dictionary with the simplified expression)
         """
+        # print("prefix to infix", ' '.join(expr))
         if len(expr) == 0:
             raise InvalidPrefixExpression("Empty prefix list.")
         t = expr[0]
+        #print(t)
         if t in self.operators:
             args = []
             l1 = expr[1:]
-            for _ in range(self.OPERATORS[t]):
+            if(t == 'l'):
+                arity = 1   ### CHANGE IF DE BRUIJN OR LC NORMAL
+            else:
+                arity = self.OPERATORS[t]
+            for _ in range(arity):
+                #print(t)
                 i1, l1 = self._prefix_to_infix(l1)
                 args.append(i1)
             return self.write_infix(t, args), l1
-        elif t in self.variables or t in self.coefficients or t in self.constants or t == 'I':
+        #elif t in self.variables or t in self.coefficients or t in self.constants or t == 'I':
+        elif self.is_in_variables(t) or t in self.coefficients or t in self.constants or t == 'I':
             return t, expr[1:]
         else:
             val, i = self.parse_int(expr)
@@ -633,6 +839,7 @@ class CharSPEnvironment(object):
         p, r = self._prefix_to_infix(expr)
         if len(r) > 0:
             raise InvalidPrefixExpression(f"Incorrect prefix expression \"{expr}\". \"{r}\" was not parsed.")
+        #print(f'>>>>>>>>>>>>>>> ({p})')
         return f'({p})'
 
     def rewrite_sympy_expr(self, expr):
@@ -772,6 +979,119 @@ class CharSPEnvironment(object):
         expr = expr.replace("Y", "f x")
         expr = expr.split()
         return expr
+
+    @timeout(3)
+    def gen_lambda(self, rng):
+        """
+        Generate pairs of (function, beta_reduction).
+        Start by generating a random function f, and use NOTHING to compute F.
+        """
+        x = self.variables['x']
+
+        if rng.randint(40) == 0:
+            nb_ops = rng.randint(0, 3)
+        else:
+            nb_ops = rng.randint(3, self.max_ops + 1)
+
+        if not hasattr(self, 'prim_stats'):
+            self.prim_stats = np.zeros(10, dtype=np.int64)
+
+        try:
+            # generate an expression and rewrite it,
+            # avoid issues in 0 and convert to SymPy
+            f_expr = self._generate_expr(nb_ops, self.max_int, rng)
+            infix = self.prefix_to_infix(f_expr)
+            #print(f'>>>>>>>>>>>>>>>>>> {f_expr}')
+            #print(f'>>>>>>>>>>>>>>>>>> {infix}')
+
+
+        except TimeoutError:
+            raise
+        except (ValueError, AttributeError, TypeError, OverflowError, NotImplementedError, UnknownSymPyOperator, ValueErrorExpression):
+            return None
+        except Exception as e:
+            logger.error("An unknown exception of type {0} occurred in line {1} for expression \"{2}\". Arguments:{3!r}.".format(type(e).__name__, sys.exc_info()[-1].tb_lineno, infix, e.args))
+            return None
+
+        # define input / output
+        x = ['BETA'] + f_expr
+        #print('>>>>> x', ' '.join(x))
+        aux = lambda_calculus.beta_reduction_prefix(' '.join(f_expr))
+        #print(list(aux.split(" ")))
+        # y = list(aux.split(" "))[:-1]  # tirei o ultimo elemento pq era sempre vazio
+        y = list(aux.split(" "))
+        #print(y)
+        #print('>>>>> y', ' '.join(y))
+
+        x = self.clean_prefix(x)
+        y = self.clean_prefix(y)
+        #print('>>>>> x', ' '.join(x))
+        #print('>>>>> y', ' '.join(y))
+
+        return x, y
+
+    @timeout(3)
+    def gen_debruijn(self, rng):
+        """
+        Generate pairs of (function, beta_reduction).
+        Start by generating a random function f, and use NOTHING to compute F.
+        """
+        x = self.variables['x']
+
+        if rng.randint(40) == 0:
+            nb_ops = rng.randint(0, 3)
+        else:
+            nb_ops = rng.randint(3, self.max_ops + 1)
+
+        # print(nb_ops)
+
+        if not hasattr(self, 'prim_stats'):
+            self.prim_stats = np.zeros(10, dtype=np.int64)
+
+        try:
+            # generate an expression and rewrite it,
+            # avoid issues in 0 and convert to SymPy
+            f_expr = self._generate_expr_de_bruijn(nb_ops, self.max_int, rng)
+            # print(f_expr)
+            infix = self.prefix_to_infix(f_expr)
+            # print(infix)
+            #print(f'>>>>>>>>>>>>>>>>>> {f_expr}')
+            #print(f'>>>>>>>>>>>>>>>>>> {infix}')
+
+
+        except TimeoutError:
+            raise
+        except (ValueError, AttributeError, TypeError, OverflowError, NotImplementedError, UnknownSymPyOperator, ValueErrorExpression) as e:
+            print('error', e)
+            return None
+        except Exception as e:
+            print('error')
+            logger.error("An unknown exception of type {0} occurred in line {1} for expression \"{2}\". Arguments:{3!r}.".format(type(e).__name__, sys.exc_info()[-1].tb_lineno, infix, e.args))
+            return None
+
+        # define input / output
+
+        x = ['BETA'] + f_expr
+        #print('>>>>> x', ' '.join(x))
+
+        #aux = lambda_calculus.beta_reduction_prefix(' '.join(f_expr))
+
+        #print(list(aux.split(" ")))
+        # y = list(aux.split(" "))[:-1]  # tirei o ultimo elemento pq era sempre vazio
+
+        #y = list(aux.split(" "))
+        y = x
+
+        #print(y)
+        #print('>>>>> y', ' '.join(y))
+
+        x = self.clean_prefix(x)
+        y = self.clean_prefix(y)
+        #print('>>>>> x', ' '.join(x))
+        #print('>>>>> y', ' '.join(y))
+
+        # print(x, y)
+        return x, y
 
     @timeout(3)
     def gen_prim_fwd(self, rng):
@@ -1416,16 +1736,37 @@ class EnvDataset(Dataset):
         """
         Collate samples into a batch.
         """
+        #print("generation")
         x, y = zip(*elements)
+
+        #print(f"collating x {x}")
+        #print(f"collating y {y}")
+        #
+        # print(f'x0 {x[0]}')
+        # print(f'y0 {y[0]}')
+        #
+        # print(f"lenx {len(x)} leny {len(y)}")
+
         nb_ops = [sum(int(word in self.env.OPERATORS) for word in seq) for seq in x]
+
+        # print(f"nb_ops {nb_ops}")
         # for i in range(len(x)):
         #     print(self.env.prefix_to_infix(self.env.unclean_prefix(x[i])))
         #     print(self.env.prefix_to_infix(self.env.unclean_prefix(y[i])))
         #     print("")
         x = [torch.LongTensor([self.env.word2id[w] for w in seq if w in self.env.word2id]) for seq in x]
         y = [torch.LongTensor([self.env.word2id[w] for w in seq if w in self.env.word2id]) for seq in y]
+        # print(f'x0 {x[0]}')
+        # print(f'y0 {y[0]}')
         x, x_len = self.env.batch_sequences(x)
         y, y_len = self.env.batch_sequences(y)
+        # print(f'x0 {x[0]}')
+        # print(f'xshape {x.shape}')
+        # print(f'yshape {y.shape}')
+        # print(f'y0 {y[0]}')
+        # print(f'xlen {x_len}')
+        # print(f'ylen {y_len}')
+
         return (x, x_len), (y, y_len), torch.LongTensor(nb_ops)
 
     def init_rng(self):
@@ -1482,6 +1823,7 @@ class EnvDataset(Dataset):
         """
         Generate a sample.
         """
+        # print("generatingd")
         while True:
 
             try:
@@ -1497,6 +1839,10 @@ class EnvDataset(Dataset):
                     xy = self.env.gen_ode1(self.rng)
                 elif self.task == 'ode2':
                     xy = self.env.gen_ode2(self.rng)
+                elif self.task == 'lambda':
+                    xy = self.env.gen_lambda(self.rng)
+                elif self.task == 'debruijn':
+                    xy = self.env.gen_debruijn(self.rng)
                 else:
                     raise Exception(f'Unknown data type: {self.task}')
                 if xy is None:
@@ -1506,7 +1852,7 @@ class EnvDataset(Dataset):
             except TimeoutError:
                 continue
             except Exception as e:
-                logger.error("An unknown exception of type {0} occurred for worker {4} in line {1} for expression \"{2}\". Arguments:{3!r}.".format(type(e).__name__, sys.exc_info()[-1].tb_lineno, 'F', e.args, self.get_worker_id()))
+                logger.error("An unknown exception of type {0} occurred for worker {4} in line {1} for expression \"{2}\". Arguments:{3!r}.".format(type(e).__name__, sys.exc_info()[-1].tb_lineno, 'F', e.args, self.get_worker_id()), e)
                 continue
         self.count += 1
 
@@ -1515,4 +1861,5 @@ class EnvDataset(Dataset):
             logger.warning(f"Clearing SymPy cache (worker {self.get_worker_id()})")
             clear_cache()
 
+        #print(f"generate_sample: {x} {y}")
         return x, y

@@ -35,10 +35,16 @@ def build_modules(env, params):
     modules['encoder'] = TransformerModel(params, env.id2word, is_encoder=True, with_output=False)
     modules['decoder'] = TransformerModel(params, env.id2word, is_encoder=False, with_output=True)
 
+    print(params.cpu)
+
     # reload pretrained modules
     if params.reload_model != '':
         logger.info(f"Reloading modules from {params.reload_model} ...")
-        reloaded = torch.load(params.reload_model)
+        # reloaded = torch.load(params.reload_model)
+        if(params.cpu):
+            reloaded = torch.load(params.reload_model, map_location=torch.device('cpu'))
+        else:
+            reloaded = torch.load(params.reload_model, map_location=torch.device('cuda'))
         for k, v in modules.items():
             assert k in reloaded
             if all([k2.startswith('module.') for k2 in reloaded[k].keys()]):

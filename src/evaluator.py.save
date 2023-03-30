@@ -15,7 +15,6 @@ import sys
 from .utils import to_cuda, timeout, TimeoutError
 from .envs.char_sp import InvalidPrefixExpression, is_valid_expr
 from .envs.sympy_utils import simplify
-import json
 
 sys.path.append('../lambda-calculus/src')
 
@@ -30,15 +29,11 @@ def idx_to_sp(env, idx, return_infix=False):
     """
     Convert an indexed prefix expression to SymPy.
     """
-    #print(f'converting {idx}')
     prefix = [env.id2word[wid] for wid in idx]
-    #print(f'prefix {prefix}')
     prefix = env.unclean_prefix(prefix)
-    #print(f'prefix {prefix}')
-    #infix = env.prefix_to_infix(prefix)
-    infix = ['']
+    infix = env.prefix_to_infix(prefix)
     #eq = sp.S(infix, locals=env.local_dict)
-    eq = prefix
+    eq = infix
     return (eq, infix) if return_infix else eq
 
 
@@ -50,11 +45,11 @@ def check_valid_solution(env, src, tgt, hyp):
     f = env.local_dict['f']
     x = env.local_dict['x']
 
-    valid = hyp == tgt
-    # if not valid:
-    #     diff = src.subs(f(x), hyp).doit()
-    #     diff = simplify(diff, seconds=1)
-    #     valid = diff == 0
+    valid = simplify(hyp - tgt, seconds=1) == 0
+    if not valid:
+        diff = src.subs(f(x), hyp).doit()
+        diff = simplify(diff, seconds=1)
+        valid = diff == 0
 
     return valid
 
@@ -69,11 +64,6 @@ def check_hypothesis(eq):
     hyp = eq['hyp']
 
     hyp_infix = [env.id2word[wid] for wid in hyp]
-
-    # hyp, hyp_infix = idx_to_sp(env, hyp, return_infix=True)
-    # is_valid = check_valid_solution(env, src, tgt, hyp)
-    # if is_valid_expr(hyp_infix):
-    #     hyp_infix = str(hyp)
 
     try:
         hyp, hyp_infix = idx_to_sp(env, hyp, return_infix=True)
@@ -91,10 +81,9 @@ def check_hypothesis(eq):
     # update hypothesis
     f = env.local_dict['f']
     x = env.local_dict['x']
-
-    eq['src'] = src  # hack to avoid pickling issues with lambdify
     #eq['src'] = src.subs(f(x), 'f')  # hack to avoid pickling issues with lambdify
-    eq['tgt'] = tgt
+    
+ eq['tgt'] = tgt
     eq['hyp'] = hyp_infix
     eq['is_valid'] = is_valid
 
@@ -138,39 +127,6 @@ class Evaluator(object):
 
         return scores
 
-    def print_bool_tensor(self, t):
-        for x in t:
-            for y in x:
-                if y.item():
-                    item = 1
-                else:
-                    item = 0
-                print(item, ' ', end='')
-            print('')
-
-
-    def get_len(self, t):
-        c = 0
-        for i in t:
-            if i == 0:
-                pass
-            else:
-                c += 1
-        return c
-
-    def compare_tensors(self, t1, t2):
-        r = True
-        j = 0
-        a = ''
-        for i, _ in enumerate(t1):
-            if t1[i] == t2[i]:
-                pass
-            else:
-                a = t2[i]
-                j = i
-                r = False
-        return r, i
-
     def enc_dec_step(self, data_type, task, scores):
         """
         Encoding / decoding step.
@@ -178,7 +134,6 @@ class Evaluator(object):
         params = self.params
         env = self.env
         encoder, decoder = self.modules['encoder'], self.modules['decoder']
-        # print('\n\n\n\n\n\n\n',  self.modules)
         encoder.eval()
         decoder.eval()
         assert params.eval_verbose in [0, 1]
@@ -190,8 +145,6 @@ class Evaluator(object):
         n_valid = torch.zeros(1000, dtype=torch.long)
         n_total = torch.zeros(1000, dtype=torch.long)
 
-        invalids = []
-
         # evaluation details
         if params.eval_verbose:
             eval_path = os.path.join(params.dump_path, f"eval.{task}.{scores['epoch']}")
@@ -200,67 +153,19 @@ class Evaluator(object):
 
         # iterator
         iterator = self.env.create_test_iterator(data_type, task, params=params, data_path=self.trainer.data_path)
-        # print(f'iterator  {iterator}')
         eval_size = len(iterator.dataset)
-        # print (f'\n\n\n\n\n\n\neval size {eval_size}\n\n\n\n\n\n\n')
 
         for (x1, len1), (x2, len2), nb_ops in iterator:
-
-            # print(f'>>>>>>>>>>>>>>>>>>>>> SHAPES:')
-            # print(f'x1: {x1.shape}')
-            # torch.set_printoptions(profile="full")
-            # torch.set_printoptions(linewidth=200)
-            # print(f'x1: {x1.shape}')
-            # print(f'len1: {len1}')
-            # print(f'nbops: {nb_ops}')
-            # print(f'x2: {x2.shape}')
-            # print(f'len1: {len1.shape}')
-            # print(f'len2: {len2.shape}')
-            # print(f'nbops: {nb_ops.shape}')
-
-            # print(len1.max(), x1.shape[0])
-            # print(len2.max(), x2.shape[0])
 
             # print status
             if n_total.sum().item() % 100 < params.batch_size:
                 logger.info(f"{n_total.sum().item()}/{eval_size}")
 
             # target words to predict
-            alen = torch.arange(len2.max(), dtype=torch.long, device=len2.device)   # creates a tensor like [1,2,3,4,...,len2.max()]
-
-            #print(f'alen {alen}')
-
-            #print(f'alen none {alen[:, None]}')
-
-            #print(f'len2[None] {len2[None]}')
-
-            a = torch.tensor([1,2,3])
-            b = torch.tensor([4,5,6])
-            c = a < b
-            # print('>>>>>>>>>>>>>>>>> c', c)
-
-            # In turn n[:, None] will have the effect of inserting a new dimension on dim=1
+            alen = torch.arange(len2.max(), dtype=torch.long, device=len2.device)
             pred_mask = alen[:, None] < len2[None] - 1  # do not predict anything given the last target word
-            # print(f'pred_mask {pred_mask.shape}')
-            # pred_mask is just a tensor with 1 when x2 have value and 0 otherwise
-
-            # for x in pred_mask:
-            #     for y in x:
-            #         if y.item():
-            #             item = 1
-            #         else:
-            #             item = 0
-            #         print(item, ' ', end='')
-            #     print('')
-
-            # masked_select: Returns a new 1-D tensor which indexes the input tensor according to the boolean mask mask which is a BoolTensor.
             y = x2[1:].masked_select(pred_mask[:-1])
-
-
-
             assert len(y) == (len2 - 1).sum().item()
-
-            #print(f'y {y.shape} {y}')
 
             # cuda
             x1, len1, x2, len2, y = to_cuda(x1, len1, x2, len2, y)
@@ -270,76 +175,19 @@ class Evaluator(object):
             decoded = decoder('fwd', x=x2, lengths=len2, causal=True, src_enc=encoded.transpose(0, 1), src_len=len1)
             word_scores, loss = decoder('predict', tensor=decoded, pred_mask=pred_mask, y=y, get_scores=True)
 
-            # print(f'word_scores {word_scores.shape}')
-            #print(f'word_scores {word_scores}')
-            #print(f'word_scores {word_scores.max(1)}')
-            #print(f'word_scores {word_scores.max(1)[1]}')
-            # print(f'loss {loss}')
-
-            ## o treinamento termina aqui
-
             # correct outputs per sequence / valid top-1 predictions
             t = torch.zeros_like(pred_mask, device=y.device)
-
-            #print(f't {t}')
-            # t is a tensor all false
-            # print(f'pm {pred_mask.shape}')
-            # print(f't {t.shape}')
-            #print(f't {t}')
-
             t[pred_mask] += word_scores.max(1)[1] == y
-            # print(f't {t.shape}')
-            #print(f't {t}')
-            #self.print_bool_tensor(t)
-            # print(f't sum {t.sum(0)}')
-            #print(f't {t}')
-
             valid = (t.sum(0) == len2 - 1).cpu().long()
-
-            # print(f'valid {valid}')
-
-            result_aux = word_scores.max(1)[1]
-            result = torch.zeros_like(x2, device=y.device)
-            result[pred_mask] = result_aux
-
-
 
             # export evaluation details
             if params.eval_verbose:
                 for i in range(len(len1)):
-                    # print("STARTING")
+                    # src = idx_to_sp(env, x1[1:len1[i] - 1, i].tolist())
+                    # tgt = idx_to_sp(env, x2[1:len2[i] - 1, i].tolist())
                     src = idx_to_sp(env, x1[1:len1[i] - 1, i].tolist())
                     tgt = idx_to_sp(env, x2[1:len2[i] - 1, i].tolist())
-
-                    # print(len2[i]-2, self.get_len(result[:,i]))
-
-                    src = idx_to_sp(env, x1[1:len1[i] - 1, i].tolist())
-                    tgt = idx_to_sp(env, x2[1:len2[i] - 1, i].tolist())
-
-                    # print(result[:,i])
-
-                    l = self.get_len(result[:,i])
-                    tst = idx_to_sp(env, result[0:l, i].tolist())
-
-
-                    src = ' '.join(src)
-                    tgt = ' '.join(tgt)
-                    tst = ' '.join(tst)
-                    s = f"Equation {n_total.sum().item() + i} ({'Valid' if valid[i] else 'Invalid'})\nsrc={src}\ntgt={tgt}\ntst={tst}\n"
-
-                    if not valid[i]:
-                        original = src
-                        target = tgt
-                        predicted = tst
-                        invalids.append({"original":original, "target": target, "predicted": predicted})
-
-                    # print('comparing ', self.compare_tensors(tgt, tst))
-
-                    # print(' '.join(src))
-                    # print(src)
-                    # print(nb_ops)
-                    # print(' '.join(tst))
-
+                    s = f"Equation {n_total.sum().item() + i} ({'Valid' if valid[i] else 'Invalid'})\nsrc={src}\ntgt={tgt}\n"
                     if params.eval_verbose_print:
                         logger.info(s)
                     f_export.write(s + "\n")
@@ -359,11 +207,6 @@ class Evaluator(object):
         _n_total = n_total.sum().item()
         logger.info(f"{_n_valid}/{_n_total} ({100. * _n_valid / _n_total}%) equations were evaluated correctly.")
 
-        # logger.info(json.dumps(invalids))
-
-        # print(json.dumps(invalids))
-
-
         # compute perplexity and prediction accuracy
         assert _n_total == eval_size or self.trainer.data_path
         scores[f'{data_type}_{task}_xe_loss'] = xe_loss / _n_total
@@ -371,7 +214,6 @@ class Evaluator(object):
 
         # per class perplexity and prediction accuracy
         for i in range(len(n_total)):
-            # print(i, n_total[i].item())
             if n_total[i].item() == 0:
                 continue
             # logger.info(f"{i}: {n_valid[i].item()} / {n_total[i].item()} ({100. * n_valid[i].item() / max(n_total[i].item(), 1)}%)")
