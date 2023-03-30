@@ -14,9 +14,11 @@ Please check the original repository if you have any questions on how the code w
 
 The code works with 2 different Lambda notations: traditional and de Bruijn. To switch between then, check the file src/envs/chat_sp.py for the following lines and change the line commented:
 
->   # Change here if you want to train traditional or DB notation
->   self.words = SPECIAL_WORDS +  self.operators + self.lambda_vars + self.symbols
->   # self.words = SPECIAL_WORDS +  self.operators + self.db_vars + self.symbols
+```
+    # Change here if you want to train traditional or DB notation
+    self.words = SPECIAL_WORDS +  self.operators + self.lambda_vars + self.symbols
+    # self.words = SPECIAL_WORDS +  self.operators + self.db_vars + self.symbols
+```
 
 ## Dependencies
 
